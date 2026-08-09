@@ -133,46 +133,94 @@ func scalar(value any) (any, bool) {
 }
 
 func pointFromJSON(payload []byte, c Config) (*influx.Point, error) {
-	var values map[string]any
-	if err := json.Unmarshal(payload, &values); err != nil {
+	var message map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &message); err != nil {
 		return nil, fmt.Errorf("decode JSON: %w", err)
 	}
-	tagSet := make(map[string]bool, len(c.InfluxTags))
-	for _, key := range c.InfluxTags {
-		tagSet[key] = true
+
+	var metadata map[string]any
+	var metadataKey, dataKey string
+	var dataObject map[string]any
+	for key, raw := range message {
+		var object map[string]any
+		if err := json.Unmarshal(raw, &object); err != nil {
+			continue
+		}
+		if _, hasData := object["data"]; hasData {
+			dataKey, dataObject = key, object
+		} else if _, hasTime := object["time"]; hasTime {
+			metadataKey, metadata = key, object
+		}
+	}
+	if dataKey == "" || metadataKey == "" {
+		return nil, errors.New("JSON must contain metadata (*_input1) and register data (*_input2) objects")
+	}
+
+	var registers []float64
+	dataText, ok := dataObject["data"].(string)
+	if !ok {
+		return nil, errors.New("register data field must be a JSON array encoded as a string")
+	}
+	if err := json.Unmarshal([]byte(dataText), &registers); err != nil {
+		return nil, fmt.Errorf("decode register data: %w", err)
+	}
+	if len(registers) == 0 {
+		return nil, errors.New("register data array is empty")
+	}
+
+	pointTime, err := messageTime(metadata)
+	if err != nil {
+		return nil, err
 	}
 	tags, fields := map[string]string{}, map[string]any{}
-	for key, raw := range values {
-		value, ok := scalar(raw)
-		if !ok {
-			continue
-		}
-		if tagSet[key] {
-			if text, ok := value.(string); ok {
-				tags[key] = text
-			}
-			continue
-		}
-		fields[key] = value
+	collection := strings.TrimSuffix(metadataKey, "_input1")
+	input := strings.TrimSuffix(dataKey, "_input2")
+	if collection != "" {
+		tags["collection"] = collection
 	}
-	if len(fields) == 0 {
-		return nil, errors.New("JSON object contains no usable fields")
+	if input != "" {
+		tags["input"] = input
 	}
-	pointTime := time.Now().UTC()
-	if c.TimestampField != "" {
-		if raw, ok := values[c.TimestampField].(string); ok {
-			parsed, err := time.Parse(time.RFC3339Nano, raw)
-			if err != nil {
-				return nil, fmt.Errorf("parse timestamp field %q: %w", c.TimestampField, err)
-			}
-			pointTime = parsed
+	if id, ok := metadata["id"].(string); ok {
+		tags["device_id"] = id
+	}
+	if name, ok := metadata["name"].(string); ok {
+		tags["name"] = name
+	}
+
+	if addr, ok := dataObject["addr"].(string); ok {
+		value, err := strconv.ParseInt(addr, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("parse Modbus address %q: %w", addr, err)
 		}
+		fields["modbus_start_address"] = value
+	} else {
+		return nil, errors.New("register data object has no addr field")
 	}
+	for index, value := range registers {
+		fields[fmt.Sprintf("register_%d", index)] = value
+	}
+
 	point, err := influx.NewPoint(c.InfluxMeasurement, tags, fields, pointTime)
 	if err != nil {
 		return nil, fmt.Errorf("create Influx point: %w", err)
 	}
 	return point, nil
+}
+
+func messageTime(metadata map[string]any) (time.Time, error) {
+	if unix, ok := metadata["time"].(float64); ok {
+		return time.Unix(int64(unix), 0).UTC(), nil
+	}
+	if text, ok := metadata["time_iso_8601"].(string); ok {
+		for _, layout := range []string{time.RFC3339Nano, "2006-01-02T15:04:05-0700"} {
+			if parsed, err := time.Parse(layout, text); err == nil {
+				return parsed, nil
+			}
+		}
+		return time.Time{}, fmt.Errorf("parse time_iso_8601 %q", text)
+	}
+	return time.Time{}, errors.New("metadata object has no usable time or time_iso_8601 field")
 }
 
 func main() {
