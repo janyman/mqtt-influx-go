@@ -136,6 +136,7 @@ func scalar(value any) (any, bool) {
 
 // Registers per Vallox documentation
 const (
+	FAN_SPEED                   = 4353
 	EXTRACT_AIR_TEMPERATURE     = 4354
 	EXHAUST_AIR_TEMPERATURE     = 4355
 	OUTDOOR_AIR_TEMPERATURE     = 4356
@@ -157,29 +158,31 @@ func centiKtoC(centiK float64) float64 {
 func handleRegister(addr int64, offset int, rawValue uint16) (measurement string, location string, ok bool, normalizedValue float64) {
 	switch int(addr) + offset {
 	case OUTDOOR_AIR_TEMPERATURE:
-		return "temperature", "outdoor", true, centiKtoC(float64(rawValue))
+		return "temperature", "LTO01.TE01", true, centiKtoC(float64(rawValue))
 	case SUPPLY_CELL_AIR_TEMPERATURE:
-		return "temperature", "supply_cell", true, centiKtoC(float64(rawValue))
+		return "temperature", "LTO01.TE05", true, centiKtoC(float64(rawValue))
 	case SUPPLY_AIR_TEMPERATURE:
-		return "temperature", "supply", true, centiKtoC(float64(rawValue))
+		return "temperature", "LTO01.TE07", true, centiKtoC(float64(rawValue))
 	case OPTIONAL_SENSOR_TEMPERATURE:
-		return "temperature", "supply_air_after_mlv", true, centiKtoC(float64(rawValue))
+		return "temperature", "LTO01.TE10", true, centiKtoC(float64(rawValue))
 	case EXTRACT_AIR_TEMPERATURE:
-		return "temperature", "extract", true, centiKtoC(float64(rawValue))
+		return "temperature", "LTO01.TE30", true, centiKtoC(float64(rawValue))
 	case EXHAUST_AIR_TEMPERATURE:
-		return "temperature", "exhaust", true, centiKtoC(float64(rawValue))
+		return "temperature", "LTO01.TE32", true, centiKtoC(float64(rawValue))
 	case EXTR_FAN_SPEED:
-		return "fanspeed", "exhaust_rpm", true, float64(rawValue)
+		return "fanspeed_rpm", "LTO01.PF", true, float64(rawValue)
 	case SUPP_FAN_SPEED:
-		return "fanspeed", "supply_rpm", true, float64(rawValue)
+		return "fanspeed_rpm", "LTO01.TF", true, float64(rawValue)
+	case FAN_SPEED:
+		return "fanspeed", "LTO01", true, float64(rawValue)
 	case RH_VALUE:
-		return "rm", "extract", true, float64(rawValue)
+		return "rh", "LTO01.ME30", true, float64(rawValue)
 	case CO2_VALUE:
-		return "co2", "extract", true, float64(rawValue)
+		return "co2", "LTO01.QE30", true, float64(rawValue)
 	case HR_CELL_STATUS:
-		return "heat_recovery_cell", "status", true, float64(rawValue)
+		return "heat_recovery_cell", "LTO01.status", true, float64(rawValue)
 	case MLV_STATE:
-		return "mlv_coil", "status", true, float64(rawValue)
+		return "mlv_coil", "LTO01.status", true, float64(rawValue)
 	}
 	return "", "", false, 0
 }
