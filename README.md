@@ -1,13 +1,10 @@
 # mqtt-influx-go
 
-A small MQTT over TLS listener that converts the Modbus JSON payload into an InfluxDB 1.x point.
+A small MQTT over TLS listener that converts Modbus data sent by a Teltonika TRB145 as JSON payload into an InfluxDB 1.x point.
 
-For each message, the metadata object ending in _input1 supplies the point timestamp. The register object ending in _input2 supplies the Modbus start address and register values. The configured measurement receives these fields:
+For each message, the metadata object ending in _input1 supplies the point timestamp. The register object ending in _input2 supplies the Modbus start address and register values. Each register becomes one point with a numeric `value` field and `location` tag; the optional `device` tag is set from `INFLUX_DEVICE`. The address and register-offset mappings are defined in `locationForRegister` in `main.go`. Unknown mappings cause the message to be rejected.
 
-- modbus_start_address
-- register_0, register_1, and so on
-
-The collection, input, device ID, and name are written as tags. The Unix time value is preferred; time_iso_8601 is also accepted, including offsets such as +0300.
+The default measurement is `temperature`. The Unix time value is preferred; time_iso_8601 is also accepted, including offsets such as +0300.
 
 ~~~sh
 export MQTT_URL='ssl://broker.example.net:8883'
@@ -40,36 +37,42 @@ Build the image from the project directory:
 docker build -t mqtt-influx-go:latest .
 ~~~
 
-Run it by passing the configuration as environment variables. The container does not need an exposed port because it creates outbound connections to MQTT and InfluxDB:
+Run it by passing the configuration as environment variables. The container does not need an exposed port because it creates outbound connections to MQTT and InfluxDB. On Linux, --add-host=host.docker.internal:host-gateway makes services on the native host reachable; use host.docker.internal in MQTT_URL too when the broker is also on the host:
 
 ~~~sh
 docker run -d \
   --name mqtt-influx-go \
+  --add-host=host.docker.internal:host-gateway \
   --restart unless-stopped \
   -e MQTT_URL='ssl://broker.example.net:8883' \
   -e MQTT_TOPIC='modbus/+/reading' \
   -e MQTT_USERNAME='mqtt-user' \
   -e MQTT_PASSWORD='change-me' \
-  -e INFLUX_URL='http://influxdb.example.net:8086' \
+  -e INFLUX_URL='http://host.docker.internal:8086' \
   -e INFLUX_DATABASE='sensors' \
-  -e INFLUX_MEASUREMENT='modbus_registers' \
+  -e INFLUX_MEASUREMENT='temperature'
+  -e INFLUX_DEVICE='trb145' \
   mqtt-influx-go:latest
 ~~~
+
+
 
 For a private MQTT CA certificate, mount the PEM file read-only and point MQTT_CA_FILE at the container path:
 
 ~~~sh
 docker run -d \
   --name mqtt-influx-go \
+  --add-host=host.docker.internal:host-gateway \
   --restart unless-stopped \
   -e MQTT_URL='ssl://broker.example.net:8883' \
   -e MQTT_TOPIC='modbus/+/reading' \
   -e MQTT_USERNAME='mqtt-user' \
   -e MQTT_PASSWORD='change-me' \
   -e MQTT_CA_FILE='/run/certs/mqtt-ca.pem' \
-  -e INFLUX_URL='http://influxdb.example.net:8086' \
+  -e INFLUX_URL='http://host.docker.internal:8086' \
   -e INFLUX_DATABASE='sensors' \
-  -e INFLUX_MEASUREMENT='modbus_registers' \
+  -e INFLUX_MEASUREMENT='temperature'
+  -e INFLUX_DEVICE='trb145' \
   -v "$PWD/certs/mqtt-ca.pem:/run/certs/mqtt-ca.pem:ro" \
   mqtt-influx-go:latest
 ~~~

@@ -27,6 +27,7 @@ type Config struct {
 	MQTTQoS                                                                      byte
 	InfluxURL, InfluxDatabase, InfluxUsername, InfluxPassword, InfluxMeasurement string
 	InfluxRetentionPolicy                                                        string
+	InfluxDevice                                                                 string
 	InfluxTags                                                                   []string
 	TimestampField                                                               string
 }
@@ -64,8 +65,9 @@ func loadConfig() Config {
 	flag.StringVar(&c.InfluxDatabase, "influx-database", env("INFLUX_DATABASE", "mqtt"), "InfluxDB database")
 	flag.StringVar(&c.InfluxUsername, "influx-username", env("INFLUX_USERNAME", ""), "InfluxDB username")
 	flag.StringVar(&c.InfluxPassword, "influx-password", env("INFLUX_PASSWORD", ""), "InfluxDB password")
-	flag.StringVar(&c.InfluxMeasurement, "influx-measurement", env("INFLUX_MEASUREMENT", "mqtt"), "InfluxDB measurement")
+	flag.StringVar(&c.InfluxMeasurement, "influx-measurement", env("INFLUX_MEASUREMENT", "temperature"), "InfluxDB measurement")
 	flag.StringVar(&c.InfluxRetentionPolicy, "influx-retention-policy", env("INFLUX_RETENTION_POLICY", ""), "optional InfluxDB retention policy")
+	flag.StringVar(&c.InfluxDevice, "influx-device", env("INFLUX_DEVICE", ""), "device tag value")
 	flag.StringVar(&tags, "influx-tags", env("INFLUX_TAGS", ""), "comma-separated JSON keys to write as tags")
 	flag.StringVar(&c.TimestampField, "timestamp-field", env("TIMESTAMP_FIELD", ""), "optional JSON field containing an RFC3339 timestamp")
 	flag.Parse()
@@ -132,7 +134,41 @@ func scalar(value any) (any, bool) {
 	}
 }
 
-func pointFromJSON(payload []byte, c Config) (*influx.Point, error) {
+// Registers per Vallox documentation
+const (
+	EXTRACT_AIR_TEMPERATURE     = 4354
+	EXHAUST_AIR_TEMPERATURE     = 4355
+	OUTDOOR_AIR_TEMPERATURE     = 4356
+	SUPPLY_CELL_AIR_TEMPERATURE = 4357
+	SUPPLY_AIR_TEMPERATURE      = 4358
+	OPTIONAL_SENSOR_TEMPERATURE = 4389
+	RH_VALUE                    = 4368
+	CO2_VALUE                   = 4364
+)
+
+func centiKtoC(centiK float64) float64 {
+	return (centiK - 27315) / 100.0
+}
+
+func locationForRegister(addr int64, offset int, rawValue uint16) (string, bool, float64) {
+	switch int(addr) + offset {
+	case OUTDOOR_AIR_TEMPERATURE:
+		return "outdoor", true, centiKtoC(float64(rawValue))
+	case SUPPLY_CELL_AIR_TEMPERATURE:
+		return "supply_cell", true, centiKtoC(float64(rawValue))
+	case SUPPLY_AIR_TEMPERATURE:
+		return "supply", true, centiKtoC(float64(rawValue))
+	case OPTIONAL_SENSOR_TEMPERATURE:
+		return "supply_air_after_mlv", true, centiKtoC(float64(rawValue))
+	case EXTRACT_AIR_TEMPERATURE:
+		return "extract", true, centiKtoC(float64(rawValue))
+	case EXHAUST_AIR_TEMPERATURE:
+		return "exhaust", true, centiKtoC(float64(rawValue))
+	}
+	return "", false, 0
+}
+
+func pointFromJSON(payload []byte, c Config) ([]*influx.Point, error) {
 	var message map[string]json.RawMessage
 	if err := json.Unmarshal(payload, &message); err != nil {
 		return nil, fmt.Errorf("decode JSON: %w", err)
@@ -156,7 +192,7 @@ func pointFromJSON(payload []byte, c Config) (*influx.Point, error) {
 		return nil, errors.New("JSON must contain metadata (*_input1) and register data (*_input2) objects")
 	}
 
-	var registers []float64
+	var registers []uint16
 	dataText, ok := dataObject["data"].(string)
 	if !ok {
 		return nil, errors.New("register data field must be a JSON array encoded as a string")
@@ -172,40 +208,33 @@ func pointFromJSON(payload []byte, c Config) (*influx.Point, error) {
 	if err != nil {
 		return nil, err
 	}
-	tags, fields := map[string]string{}, map[string]any{}
-	collection := strings.TrimSuffix(metadataKey, "_input1")
-	input := strings.TrimSuffix(dataKey, "_input2")
-	if collection != "" {
-		tags["collection"] = collection
-	}
-	if input != "" {
-		tags["input"] = input
-	}
-	if id, ok := metadata["id"].(string); ok {
-		tags["device_id"] = id
-	}
-	if name, ok := metadata["name"].(string); ok {
-		tags["name"] = name
-	}
-
 	if addr, ok := dataObject["addr"].(string); ok {
-		value, err := strconv.ParseInt(addr, 10, 64)
+		startAddress, err := strconv.ParseInt(addr, 10, 64)
+		startAddress -= 1 //Decrement start address by 1, since it looks like Teltonika operates on "entity addresses" and "PDU address"
 		if err != nil {
 			return nil, fmt.Errorf("parse Modbus address %q: %w", addr, err)
 		}
-		fields["modbus_start_address"] = value
-	} else {
-		return nil, errors.New("register data object has no addr field")
+		points := make([]*influx.Point, 0, len(registers))
+		for offset, value := range registers {
+			location, ok, normalizedValue := locationForRegister(startAddress, offset, value)
+			if !ok {
+				fmt.Printf("no location mapping for Modbus address %d offset %d\n", startAddress, offset)
+				continue
+			}
+			tags := map[string]string{"location": location}
+			if c.InfluxDevice != "" {
+				tags["device"] = c.InfluxDevice
+			}
+			fields := map[string]any{"value": normalizedValue}
+			point, err := influx.NewPoint(c.InfluxMeasurement, tags, fields, pointTime)
+			if err != nil {
+				return nil, fmt.Errorf("create Influx point: %w", err)
+			}
+			points = append(points, point)
+		}
+		return points, nil
 	}
-	for index, value := range registers {
-		fields[fmt.Sprintf("register_%d", index)] = value
-	}
-
-	point, err := influx.NewPoint(c.InfluxMeasurement, tags, fields, pointTime)
-	if err != nil {
-		return nil, fmt.Errorf("create Influx point: %w", err)
-	}
-	return point, nil
+	return nil, errors.New("register data object has no addr field")
 }
 
 func messageTime(metadata map[string]any) (time.Time, error) {
@@ -242,18 +271,19 @@ func main() {
 	options := paho.NewClientOptions().AddBroker(c.MQTTURL).SetClientID(c.MQTTClientID).SetUsername(c.MQTTUsername).SetPassword(c.MQTTPassword).SetTLSConfig(tlsSettings).SetAutoReconnect(true)
 	options.OnConnect = func(client paho.Client) {
 		token := client.Subscribe(c.MQTTTopic, c.MQTTQoS, func(_ paho.Client, message paho.Message) {
-			point, err := pointFromJSON(message.Payload(), c)
+			points, err := pointFromJSON(message.Payload(), c)
 			if err != nil {
 				log.Printf("drop message on %s: %v", message.Topic(), err)
 				return
 			}
+
 			batch, err := influx.NewBatchPoints(influx.BatchPointsConfig{Database: c.InfluxDatabase, RetentionPolicy: c.InfluxRetentionPolicy})
 			if err == nil {
-				batch.AddPoint(point)
+				batch.AddPoints(points)
 				err = influxClient.Write(batch)
 			}
 			if err != nil {
-				log.Printf("write point: %v", err)
+				log.Printf("write points: %+v", err)
 			}
 		})
 		token.Wait()
