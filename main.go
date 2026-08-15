@@ -141,31 +141,47 @@ const (
 	OUTDOOR_AIR_TEMPERATURE     = 4356
 	SUPPLY_CELL_AIR_TEMPERATURE = 4357
 	SUPPLY_AIR_TEMPERATURE      = 4358
-	OPTIONAL_SENSOR_TEMPERATURE = 4389
-	RH_VALUE                    = 4368
+	EXTR_FAN_SPEED              = 4361
+	SUPP_FAN_SPEED              = 4362
+	RH_VALUE                    = 4363
 	CO2_VALUE                   = 4364
+	OPTIONAL_SENSOR_TEMPERATURE = 4389
+	HR_CELL_STATUS              = 4616 // 0: heat recovery, 1: cool recovery, 2: bypass, 3: defrosting
+	MLV_STATE                   = 4628 // on / off
 )
 
 func centiKtoC(centiK float64) float64 {
 	return (centiK - 27315) / 100.0
 }
 
-func locationForRegister(addr int64, offset int, rawValue uint16) (string, bool, float64) {
+func handleRegister(addr int64, offset int, rawValue uint16) (measurement string, location string, ok bool, normalizedValue float64) {
 	switch int(addr) + offset {
 	case OUTDOOR_AIR_TEMPERATURE:
-		return "outdoor", true, centiKtoC(float64(rawValue))
+		return "temperature", "outdoor", true, centiKtoC(float64(rawValue))
 	case SUPPLY_CELL_AIR_TEMPERATURE:
-		return "supply_cell", true, centiKtoC(float64(rawValue))
+		return "temperature", "supply_cell", true, centiKtoC(float64(rawValue))
 	case SUPPLY_AIR_TEMPERATURE:
-		return "supply", true, centiKtoC(float64(rawValue))
+		return "temperature", "supply", true, centiKtoC(float64(rawValue))
 	case OPTIONAL_SENSOR_TEMPERATURE:
-		return "supply_air_after_mlv", true, centiKtoC(float64(rawValue))
+		return "temperature", "supply_air_after_mlv", true, centiKtoC(float64(rawValue))
 	case EXTRACT_AIR_TEMPERATURE:
-		return "extract", true, centiKtoC(float64(rawValue))
+		return "temperature", "extract", true, centiKtoC(float64(rawValue))
 	case EXHAUST_AIR_TEMPERATURE:
-		return "exhaust", true, centiKtoC(float64(rawValue))
+		return "temperature", "exhaust", true, centiKtoC(float64(rawValue))
+	case EXTR_FAN_SPEED:
+		return "fanspeed", "exhaust_rpm", true, float64(rawValue)
+	case SUPP_FAN_SPEED:
+		return "fanspeed", "supply_rpm", true, float64(rawValue)
+	case RH_VALUE:
+		return "rm", "extract", true, float64(rawValue)
+	case CO2_VALUE:
+		return "co2", "extract", true, float64(rawValue)
+	case HR_CELL_STATUS:
+		return "heat_recovery_cell", "status", true, float64(rawValue)
+	case MLV_STATE:
+		return "mlv_coil", "status", true, float64(rawValue)
 	}
-	return "", false, 0
+	return "", "", false, 0
 }
 
 func pointFromJSON(payload []byte, c Config) ([]*influx.Point, error) {
@@ -216,7 +232,7 @@ func pointFromJSON(payload []byte, c Config) ([]*influx.Point, error) {
 		}
 		points := make([]*influx.Point, 0, len(registers))
 		for offset, value := range registers {
-			location, ok, normalizedValue := locationForRegister(startAddress, offset, value)
+			measurement, location, ok, normalizedValue := handleRegister(startAddress, offset, value)
 			if !ok {
 				fmt.Printf("no location mapping for Modbus address %d offset %d\n", startAddress, offset)
 				continue
@@ -226,7 +242,7 @@ func pointFromJSON(payload []byte, c Config) ([]*influx.Point, error) {
 				tags["device"] = c.InfluxDevice
 			}
 			fields := map[string]any{"value": normalizedValue}
-			point, err := influx.NewPoint(c.InfluxMeasurement, tags, fields, pointTime)
+			point, err := influx.NewPoint(measurement, tags, fields, pointTime)
 			if err != nil {
 				return nil, fmt.Errorf("create Influx point: %w", err)
 			}
