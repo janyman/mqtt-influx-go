@@ -310,7 +310,7 @@ func main() {
 			log.Printf("subscribe: %v", token.Error())
 			return
 		}
-		log.Printf("subscribed to %s", c.MQTTTopic)
+		log.Printf("subscribed to topic \"%s\"", c.MQTTTopic)
 	}
 	options.OnConnectionLost = func(_ paho.Client, err error) { log.Printf("MQTT connection lost: %v", err) }
 	client := paho.NewClient(options)
