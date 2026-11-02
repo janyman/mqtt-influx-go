@@ -134,8 +134,8 @@ func scalar(value any) (any, bool) {
 	}
 }
 
-// Registers per Vallox documentation
 const (
+	// Registers per Vallox documentation
 	FAN_SPEED                   = 4353
 	EXTRACT_AIR_TEMPERATURE     = 4354
 	EXHAUST_AIR_TEMPERATURE     = 4355
@@ -149,6 +149,15 @@ const (
 	OPTIONAL_SENSOR_TEMPERATURE = 4389
 	HR_CELL_STATUS              = 4616 // 0: heat recovery, 1: cool recovery, 2: bypass, 3: defrosting
 	MLV_STATE                   = 4628 // on / off
+
+	// Registers of the diplomat-modbus device
+	EXT_REG_OUTDOOR_TEMP    = (1010 + 0)
+	EXT_REG_TARGET_TEMP     = (1010 + 0x03)
+	EXT_REG_SUPPLYLINE_TEMP = (1010 + 0x05)
+	EXT_REG_RETURNLINE_TEMP = (1010 + 0x06)
+	EXT_REG_HOTWATER_TEMP   = (1010 + 0x07)
+	EXT_REG_BRINEIN_TEMP    = (1010 + 0x09)
+	EXT_REG_BRINEOUT_TEMP   = (1010 + 0x08)
 )
 
 func centiKtoC(centiK float64) float64 {
@@ -183,6 +192,20 @@ func handleRegister(addr int64, offset int, rawValue uint16) (measurement string
 		return "heat_recovery_cell", "LTO01.status", true, float64(rawValue)
 	case MLV_STATE:
 		return "mlv_coil", "LTO01.status", true, float64(rawValue)
+	case EXT_REG_OUTDOOR_TEMP:
+		return "temperature", "MLP01.outdoor", true, float64(int16(rawValue))
+	case EXT_REG_TARGET_TEMP:
+		return "temperature", "MLP01.setpoint", true, float64(int16(rawValue))
+	case EXT_REG_SUPPLYLINE_TEMP:
+		return "temperature", "MLP01.supply_line", true, float64(int16(rawValue))
+	case EXT_REG_RETURNLINE_TEMP:
+		return "temperature", "MLP01.return_line", true, float64(int16(rawValue))
+	case EXT_REG_HOTWATER_TEMP:
+		return "temperature", "MLP01.hotwater", true, float64(int16(rawValue))
+	case EXT_REG_BRINEIN_TEMP:
+		return "temperature", "MLP01.brinein", true, float64(int16(rawValue))
+	case EXT_REG_BRINEOUT_TEMP:
+		return "temperature", "MLP01.brineout", true, float64(int16(rawValue))
 	}
 	return "", "", false, 0
 }
