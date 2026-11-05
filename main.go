@@ -150,7 +150,7 @@ const (
 	HR_CELL_STATUS              = 4616 // 0: heat recovery, 1: cool recovery, 2: bypass, 3: defrosting
 	MLV_STATE                   = 4628 // on / off
 
-	// Registers of the diplomat-modbus device: -1 because we decrement the startAddr before calling handleRegister()!
+	// Registers of the diplomat-modbus device - +1 because we decrement the startAddr before calling handleRegister()!
 	EXT_REG_OUTDOOR_TEMP                 = (1010 + 0x00 - 1)
 	EXT_REG_INDOOR_TEMP                  = (1010 + 0x01 - 1)
 	EXT_REG_INDOOR_DEC_TEMP              = (1010 + 0x02 - 1)
@@ -187,7 +187,7 @@ const (
 	EXT_REG_RUNTIME_HOTWATER_LOW_RES     = (1010 + 0x6d - 1)
 	EXT_REG_RUNTIME_6KW                  = (1010 + 0x72 - 1)
 	EXT_REG_RUNTIME_6KW_LOW_RES          = (1010 + 0x73 - 1)
--
+)
 
 func centiKtoC(centiK float64) float64 {
 	return (centiK - 27315) / 100.0
