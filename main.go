@@ -150,14 +150,43 @@ const (
 	HR_CELL_STATUS              = 4616 // 0: heat recovery, 1: cool recovery, 2: bypass, 3: defrosting
 	MLV_STATE                   = 4628 // on / off
 
-	// Registers of the diplomat-modbus device
-	EXT_REG_OUTDOOR_TEMP    = (1010 + 0)
-	EXT_REG_TARGET_TEMP     = (1010 + 0x03)
-	EXT_REG_SUPPLYLINE_TEMP = (1010 + 0x05)
-	EXT_REG_RETURNLINE_TEMP = (1010 + 0x06)
-	EXT_REG_HOTWATER_TEMP   = (1010 + 0x07)
-	EXT_REG_BRINEIN_TEMP    = (1010 + 0x09)
-	EXT_REG_BRINEOUT_TEMP   = (1010 + 0x08)
+	// Registers of the diplomat-modbus device - +1 because we decrement the startAddr before calling handleRegister()!
+	EXT_REG_OUTDOOR_TEMP                 = (1010 + 0x00 + 1)
+	EXT_REG_INDOOR_TEMP                  = (1010 + 0x01 + 1)
+	EXT_REG_INDOOR_DEC_TEMP              = (1010 + 0x02 + 1)
+	EXT_REG_TARGET_TEMP                  = (1010 + 0x03 + 1)
+	EXT_REG_TARGET_DEC_TEMP              = (1010 + 0x04 + 1)
+	EXT_REG_SUPPLYLINE_TEMP              = (1010 + 0x05 + 1)
+	EXT_REG_RETURNLINE_TEMP              = (1010 + 0x06 + 1)
+	EXT_REG_HOTWATER_TEMP                = (1010 + 0x07 + 1)
+	EXT_REG_BRINEOUT_TEMP                = (1010 + 0x08 + 1)
+	EXT_REG_BRINEIN_TEMP                 = (1010 + 0x09 + 1)
+	EXT_REG_COOLING_TEMP                 = (1010 + 0x0a + 1)
+	EXT_REG_SUPPLYLINE_SHUNT             = (1010 + 0x0b + 1)
+	EXT_REG_ELECTRICAL_CURRENT           = (1010 + 0x0c + 1)
+	EXT_REG_AUX_HEATER_STATUS_BITMAP     = (1010 + 0x0d + 1)
+	EXT_REG_SUPPLYLINE_TARGET_TEMP       = (1010 + 0x0e + 1)
+	EXT_REG_SUPPLYLINE_TARGET_TEMP_SHUNT = (1010 + 0x0f + 1)
+	EXT_REG_STATUS1                      = (1010 + 0x10 + 1)
+	EXT_REG_STATUS2                      = (1010 + 0x11 + 1)
+	EXT_REG_PWM_OUT                      = (1010 + 0x12 + 1)
+	EXT_REG_ALARM1                       = (1010 + 0x13 + 1)
+	EXT_REG_ALARM2                       = (1010 + 0x14 + 1)
+	EXT_REG_PRESSURE_PIPE_TEMP           = (1010 + 0x17 + 1)
+	EXT_REG_INTEGRAL                     = (1010 + 0x19 + 1)
+	EXT_REG_INTEGRAL_REACHED_A_LIMIT     = (1010 + 0x1a + 1)
+	EXT_REG_HOT_WATER_SUPPLY_LIME_TEMP   = (1010 + 0x24 + 1)
+	EXT_REG_PROGRAM_VERSION              = (1010 + 0x1d + 1)
+	EXT_REG_FLOWLINE_PUMP_SPEED          = (1010 + 0x1e + 1)
+	EXT_REG_BRINE_PUMP_SPEED             = (1010 + 0x1f + 1)
+	EXT_REG_RUNTIME_COMPRESSOR           = (1010 + 0x68 + 1)
+	EXT_REG_RUNTIME_COMPRESSOR_LOW_RES   = (1010 + 0x69 + 1)
+	EXT_REG_RUNTIME_3KW                  = (1010 + 0x6a + 1)
+	EXT_REG_RUNTIME_3KW_LOW_RES          = (1010 + 0x6b + 1)
+	EXT_REG_RUNTIME_HOTWATER             = (1010 + 0x6c + 1)
+	EXT_REG_RUNTIME_HOTWATER_LOW_RES     = (1010 + 0x6d + 1)
+	EXT_REG_RUNTIME_6KW                  = (1010 + 0x72 + 1)
+	EXT_REG_RUNTIME_6KW_LOW_RES          = (1010 + 0x73 + 1)
 )
 
 func centiKtoC(centiK float64) float64 {
@@ -194,8 +223,14 @@ func handleRegister(addr int64, offset int, rawValue uint16) (measurement string
 		return "mlv_coil", "LTO01.status", true, float64(rawValue)
 	case EXT_REG_OUTDOOR_TEMP:
 		return "temperature", "MLP01.outdoor", true, float64(int16(rawValue))
+	case EXT_REG_INDOOR_TEMP:
+		return "temperature", "MLP01.indoor", true, float64(int16(rawValue))
+	case EXT_REG_INDOOR_DEC_TEMP:
+		return "temperature", "MLP01.indoor_dec", true, float64(int16(rawValue))
 	case EXT_REG_TARGET_TEMP:
 		return "temperature", "MLP01.setpoint", true, float64(int16(rawValue))
+	case EXT_REG_TARGET_DEC_TEMP:
+		return "temperature", "MLP01.setpoint_dec", true, float64(int16(rawValue))
 	case EXT_REG_SUPPLYLINE_TEMP:
 		return "temperature", "MLP01.supply_line", true, float64(int16(rawValue))
 	case EXT_REG_RETURNLINE_TEMP:
@@ -206,6 +241,58 @@ func handleRegister(addr int64, offset int, rawValue uint16) (measurement string
 		return "temperature", "MLP01.brinein", true, float64(int16(rawValue))
 	case EXT_REG_BRINEOUT_TEMP:
 		return "temperature", "MLP01.brineout", true, float64(int16(rawValue))
+	case EXT_REG_COOLING_TEMP:
+		return "temperature", "MLP01.cooling", true, float64(int16(rawValue))
+	case EXT_REG_SUPPLYLINE_SHUNT:
+		return "temperature", "MLP01.supply_line_shunt", true, float64(int16(rawValue))
+	case EXT_REG_ELECTRICAL_CURRENT:
+		return "current", "MLP01.electrical_current", true, float64(int16(rawValue))
+	case EXT_REG_AUX_HEATER_STATUS_BITMAP:
+		return "status", "MLP01.aux_heater", true, float64(int16(rawValue))
+	case EXT_REG_SUPPLYLINE_TARGET_TEMP:
+		return "temperature", "MLP01.supply_line_setpoint", true, float64(int16(rawValue))
+	case EXT_REG_SUPPLYLINE_TARGET_TEMP_SHUNT:
+		return "temperature", "MLP01.supply_line_setpoint_shunt", true, float64(int16(rawValue))
+	case EXT_REG_STATUS1:
+		return "status", "MLP01.status1", true, float64(int16(rawValue))
+	case EXT_REG_STATUS2:
+		return "status", "MLP01.status2", true, float64(int16(rawValue))
+	case EXT_REG_PWM_OUT:
+		return "pwm", "MLP01.pwm_out", true, float64(int16(rawValue))
+	case EXT_REG_ALARM1:
+		return "alarm", "MLP01.alarm1", true, float64(int16(rawValue))
+	case EXT_REG_ALARM2:
+		return "alarm", "MLP01.alarm2", true, float64(int16(rawValue))
+	case EXT_REG_PRESSURE_PIPE_TEMP:
+		return "temperature", "MLP01.pressure_pipe", true, float64(int16(rawValue))
+	case EXT_REG_HOT_WATER_SUPPLY_LIME_TEMP:
+		return "temperature", "MLP01.hot_water_supply_lime", true, float64(int16(rawValue))
+	case EXT_REG_INTEGRAL:
+		return "integral", "MLP01.integral", true, float64(int16(rawValue))
+	case EXT_REG_INTEGRAL_REACHED_A_LIMIT:
+		return "status", "MLP01.integral_reached_a_limit", true, float64(int16(rawValue))
+	case EXT_REG_PROGRAM_VERSION:
+		return "program_version", "MLP01", true, float64(int16(rawValue))
+	case EXT_REG_FLOWLINE_PUMP_SPEED:
+		return "pump_speed", "MLP01.flowline_pump", true, float64(int16(rawValue))
+	case EXT_REG_BRINE_PUMP_SPEED:
+		return "pump_speed", "MLP01.brine_pump", true, float64(int16(rawValue))
+	case EXT_REG_RUNTIME_COMPRESSOR:
+		return "runtime", "MLP01.compressor", true, float64(rawValue)
+	case EXT_REG_RUNTIME_COMPRESSOR_LOW_RES:
+		return "runtime", "MLP01.compressor_low_res", true, float64(rawValue) * 256
+	case EXT_REG_RUNTIME_3KW:
+		return "runtime", "MLP01.3kw", true, float64(rawValue)
+	case EXT_REG_RUNTIME_3KW_LOW_RES:
+		return "runtime", "MLP01.3kw_low_res", true, float64(rawValue) * 256
+	case EXT_REG_RUNTIME_HOTWATER:
+		return "runtime", "MLP01.hotwater", true, float64(rawValue)
+	case EXT_REG_RUNTIME_HOTWATER_LOW_RES:
+		return "runtime", "MLP01.hotwater_low_res", true, float64(rawValue) * 256
+	case EXT_REG_RUNTIME_6KW:
+		return "runtime", "MLP01.6kw", true, float64(rawValue)
+	case EXT_REG_RUNTIME_6KW_LOW_RES:
+		return "runtime", "MLP01.6kw_low_res", true, float64(rawValue) * 256
 	}
 	return "", "", false, 0
 }
